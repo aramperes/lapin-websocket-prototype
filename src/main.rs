@@ -100,12 +100,12 @@ async fn rabbitmq_main() {
             });
 
             if let Some((channel, delivery)) = delivery {
-                println!("Data: {:?}", delivery.data);
+                let message = Message::text(String::from_utf8(delivery.data).unwrap());
 
                 for (&user_id, tx) in users.read().await.iter() {
                     // TODO: closure is `FnOnce` because it moves the variable `users` out of its environment
-                    println!("- Sending to: {}", user_id);
-                    tx.send(Ok(Message::binary(delivery.data.clone())));
+                    println!("--> WS_MESSAGE(uid={})", user_id);
+                    tx.send(Ok(message.clone())).unwrap();
                 }
 
                 channel
@@ -125,9 +125,10 @@ async fn rabbitmq_main() {
     }
 }
 
-async fn warp_main(users: Users) {
+async fn warp_main() {
     println!("Starting websocket service");
 
+    let users = USERS.clone();
     let users = warp::any().map(move || users.clone());
 
     let routes = warp::path("notifications")
@@ -144,7 +145,7 @@ async fn warp_main(users: Users) {
 async fn user_connected(websocket: WebSocket, users: Users) {
     let user_id = Arc::from(NEXT_USER_ID.fetch_add(1, Ordering::Relaxed));
 
-    let (user_ws_tx, _) = websocket.split();
+    let (user_ws_tx, mut user_ws_rx) = websocket.split();
     let (tx, rx) = mpsc::unbounded_channel();
 
     // Forwards the channel to the websocket
@@ -152,18 +153,35 @@ async fn user_connected(websocket: WebSocket, users: Users) {
     let uid2 = user_id.clone();
     tokio::task::spawn(rx.forward(user_ws_tx).map(|result| async move {
         if let Err(e) = result {
-            eprintln!("websocket send error by {}: {}", &uid2, e);
+            eprintln!("<-- WS_SEND_ERROR(uid={}): {}", &uid2, e);
             users2.write().await.remove(&uid2);
         }
     }));
 
-    println!("user_id: {}", *user_id);
+    println!("--> WS_CONNECT(uid={})", *user_id);
     users.write().await.insert(*user_id, tx);
+
+    while let Some(result) = user_ws_rx.next().await {
+        match result {
+            Ok(msg) => {
+                if msg.is_close() {
+                    eprintln!("<-- WS_CLOSE(uid={})", *user_id);
+                    break;
+                }
+            }
+            Err(e) => {
+                eprintln!("<-- WS_ERROR(uid={}): {}", *user_id, e);
+                break;
+            }
+        }
+    }
+
+    users.write().await.remove(&user_id);
 }
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        tokio::join!(warp_main(USERS.clone()), rabbitmq_main());
+        tokio::join!(warp_main(), rabbitmq_main());
     }
 }
