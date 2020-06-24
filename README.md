@@ -8,7 +8,7 @@ and broadcast it to the websocket clients connected. Implemented using async to 
 
 ## Main crates used
 
-* [lapin](https://crates.io/crates/lapin) and [tokio-amqp](https://crates.io/crates/tokio-amqp) for the async AMPQ implementation
+* [lapin](https://crates.io/crates/lapin) and [tokio-amqp](https://crates.io/crates/tokio-amqp) for the async AMQP implementation
 * [warp](https://crates.io/crates/warp) for the websocket service
 * [tokio](https://crates.io/crates/tokio) for the async runtime
 
