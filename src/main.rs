@@ -15,7 +15,6 @@ use lapin::options::*;
 use lapin::types::FieldTable;
 use tokio::sync::{mpsc, RwLock};
 use tokio_amqp::*;
-use warp;
 use warp::Filter;
 use warp::ws::{Message, WebSocket};
 
@@ -36,7 +35,7 @@ lazy_static! {
 fn queue_declare_options_exclusive() -> QueueDeclareOptions {
     let mut queue_options = QueueDeclareOptions::default();
     queue_options.exclusive = true;
-    return queue_options;
+    queue_options
 }
 
 async fn rabbitmq_main() {
