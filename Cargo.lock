@@ -613,6 +613,7 @@ dependencies = [
  "futures",
  "futures-util",
  "lapin",
+ "lazy_static",
  "tokio",
  "tokio-amqp",
  "warp",

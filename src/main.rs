@@ -1,20 +1,23 @@
+#[macro_use]
+extern crate lazy_static;
+
 use std::collections::HashMap;
 use std::process::exit;
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
     Arc,
+    atomic::{AtomicUsize, Ordering},
 };
 
 use futures::{FutureExt, StreamExt};
+use lapin::{Connection, ConnectionProperties, ExchangeKind};
 use lapin::message::DeliveryResult;
 use lapin::options::*;
 use lapin::types::FieldTable;
-use lapin::{Connection, ConnectionProperties, ExchangeKind};
 use tokio::sync::{mpsc, RwLock};
 use tokio_amqp::*;
 use warp;
-use warp::ws::{Message, WebSocket};
 use warp::Filter;
+use warp::ws::{Message, WebSocket};
 
 /// Global unique user id counter.
 static NEXT_USER_ID: AtomicUsize = AtomicUsize::new(1);
@@ -25,6 +28,10 @@ type Users = Arc<RwLock<HashMap<usize, mpsc::UnboundedSender<Result<Message, war
 /// RabbitMQ fanout exchange name
 const NOTIFICATIONS_EXCHANGE_NAME: &str = "wavy.user.notifications";
 
+lazy_static! {
+    static ref USERS: Users = Users::default();
+}
+
 /// Builds the options for an exclusive AMQP `queue_declare`.
 fn queue_declare_options_exclusive() -> QueueDeclareOptions {
     let mut queue_options = QueueDeclareOptions::default();
@@ -32,7 +39,7 @@ fn queue_declare_options_exclusive() -> QueueDeclareOptions {
     return queue_options;
 }
 
-async fn rabbitmq_main(users: Users) {
+async fn rabbitmq_main() {
     println!("Starting RabbitMQ client");
 
     let addr = std::env::var("AMQP_ADDR").unwrap_or_else(|_| "amqp://@127.0.0.1:5672/local".into());
@@ -84,6 +91,7 @@ async fn rabbitmq_main(users: Users) {
         .unwrap();
 
     // The 'delegate' is the task being done by the executor on each new message
+    let users = &USERS;
     consumer
         .set_delegate(move |delivery: DeliveryResult| async move {
             let delivery = delivery.unwrap_or_else(|e| {
@@ -155,9 +163,7 @@ async fn user_connected(websocket: WebSocket, users: Users) {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let users = Users::default();
-
     loop {
-        tokio::join!(warp_main(users.clone()), rabbitmq_main(users.clone()));
+        tokio::join!(warp_main(USERS.clone()), rabbitmq_main());
     }
 }
